@@ -9,6 +9,8 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "newsapi-python>=0.2.7",
+    "python-dotenv>=1.2.3",
+    "trafilatura>=2.2.0",
 ]
 
 [project.scripts]
