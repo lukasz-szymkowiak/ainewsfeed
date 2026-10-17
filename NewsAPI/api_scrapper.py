@@ -3,16 +3,21 @@
 import os
 import re
 import unicodedata
+from http.client import HTTPException
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
-from newsapi import NewsApiClient
 from trafilatura import fetch_url, extract
 from trafilatura.settings import use_config
 import json
 
 # Read NEWSAPI_KEY from the .env file (searched upward from this file's folder).
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(PROJECT_ROOT / ".env")
+
+COMPANY_QUERY = '"PDD Holdings" OR Pinduoduo OR Temu'
 
 # Some sites (e.g. Cloudflare-protected ones) return 403 for trafilatura's
 # default User-Agent but accept a plain browser-like one.
@@ -27,6 +32,33 @@ ALIASES = {
 
 # Aggregators/deal sites whose pages give us no usable article text.
 EXCLUDED_DOMAINS = "biztoc.com,dealnews.com"
+
+# Seller tutorials and vendor integration announcements are not company news.
+# Check the headline so a passing mention in an otherwise relevant story does
+# not discard the article.
+SELLER_PROMOTION_PHRASES = (
+    "seller education",
+    "seller training",
+    "seller academy",
+    "seller resources",
+    "integration for retailers",
+    "dropshipping platform",
+)
+
+# A conservative topic filter for company news. Keyword matching can miss
+# relevant stories, but avoids selecting lifestyle pieces from passing mentions.
+BUSINESS_NEWS_PHRASES = (
+    "earnings", "revenue", "profit", "profits", "quarterly results",
+    "stock", "share price", "shares rise", "shares fall",
+    "tariff", "tariffs", "regulation", "regulations", "regulatory",
+    "antitrust", "lawsuit", "lawsuits", "fine", "fines", "fee", "fees",
+    "law", "laws", "advertising", "ad spending", "ad business", "ads",
+    "fulfillment", "logistics", "supply chain", "acquisition", "merger",
+    "layoffs", "invests", "investment", "investments", "expansion",
+    "competition", "compete",
+    "partner", "partners", "partnership", "launches", "introduces",
+    "expands", "recall", "recalls", "ban", "banned", "privacy", "customs",
+)
 
 
 def normalize_text(value: str | None) -> str:
@@ -63,14 +95,22 @@ def get_newsapi_results(query: str) -> dict:
     key = os.environ.get("NEWSAPI_KEY")
     if not key:
         raise RuntimeError("NEWSAPI_KEY is not set. Add it to the .env file.")
-    newsapi = NewsApiClient(api_key=key)
-    return newsapi.get_everything(
-        q=query,
-        language="en",
-        sort_by="publishedAt",
-        page_size=100,
-        exclude_domains=EXCLUDED_DOMAINS,
+    # The installed newsapi-python client doesn't expose searchIn. Use the
+    # endpoint directly, with Python's system certificate trust and a key header.
+    params = urlencode({
+        "q": query,
+        "searchIn": "title,description",
+        "language": "en",
+        "sortBy": "publishedAt",
+        "pageSize": 100,
+        "excludeDomains": EXCLUDED_DOMAINS,
+    })
+    request = Request(
+        f"https://newsapi.org/v2/everything?{params}",
+        headers={"X-Api-Key": key},
     )
+    with urlopen(request, timeout=30) as response:
+        return json.load(response)
 
 
 def parse_articles(result: dict) -> list[dict]:
@@ -89,13 +129,18 @@ def parse_articles(result: dict) -> list[dict]:
 
 
 def filter_by_query(articles: list[dict], query: str) -> list[dict]:
-    """Match whole names, excluding known figurative uses of the Temu brand."""
+    """Match whole names, excluding figurative uses and seller promotions."""
     query = normalize_text(query)
     if not query:
         return []
     terms = ALIASES.get(query, [query])
     relevant = []
     for article in articles:
+        title = normalize_text(article.get("title"))
+        if query == "pinduoduo" and any(
+            mentions(title, phrase) for phrase in SELLER_PROMOTION_PHRASES
+        ):
+            continue
         text = normalize_text(
             f"{article.get('title') or ''} {article.get('description') or ''}"
         )
@@ -104,6 +149,20 @@ def filter_by_query(articles: list[dict], query: str) -> list[dict]:
             # company mention still qualifies the story.
             text = re.sub(r"\btemu (?:range rover|beef)\b", "", text)
         if any(mentions(text, term) for term in terms):
+            relevant.append(article)
+    return relevant
+
+
+def filter_business_news(articles: list[dict], query: str) -> list[dict]:
+    """Require a company headline and business context in title or description."""
+    query = normalize_text(query)
+    terms = ALIASES.get(query, [query])
+    relevant = []
+    for article in filter_by_query(articles, query):
+        title = normalize_text(article.get("title"))
+        context = normalize_text(f"{article.get('title') or ''} {article.get('description') or ''}")
+        if (any(mentions(title, term) for term in terms)
+                and any(mentions(context, topic) for topic in BUSINESS_NEWS_PHRASES)):
             relevant.append(article)
     return relevant
 
@@ -144,17 +203,51 @@ def dedupe_by_title(articles: list[dict]) -> list[dict]:
     return unique
 
 
+def merge_with_saved(fresh: list[dict], saved: list[dict]) -> list[dict]:
+    """Combine a fresh fetch with previously saved articles, newest first.
+
+    NewsAPI's free plan only reaches back ~30 days, so saved articles that
+    have aged out of the window are kept. Matching is by canonical URL; a
+    fresh article reuses the saved body text instead of downloading it again.
+    """
+    saved_by_url = {canonical_url(a["url"]): a for a in saved if a.get("url")}
+    merged = []
+    fresh_urls = set()
+    for article in fresh:
+        key = canonical_url(article.get("url"))
+        fresh_urls.add(key)
+        if key in saved_by_url:
+            article["text"] = saved_by_url[key].get("text")
+        merged.append(article)
+    merged.extend(a for key, a in saved_by_url.items() if key not in fresh_urls)
+    return sorted(merged, key=lambda a: a.get("published") or "", reverse=True)
+
+
 def get_links(articles: list[dict]) -> list[str]:
     """Extract the URLs from a list of article dicts."""
     return [article["url"] for article in articles]
 
+def fetch_html_system_certs(url: str) -> str | None:
+    """Download a page with the system certificate store (trafilatura uses certifi's)."""
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urlopen(request, timeout=30) as response:
+            charset = response.headers.get_content_charset() or "utf-8"
+            return response.read().decode(charset, errors="replace")
+    except (OSError, ValueError, HTTPException):
+        return None
+
+
 def add_article_text(articles: list[dict], limit: int | None = None) -> list[dict]:
     """Download each article and add its main text under "text" (None if it couldn't be fetched)."""
     for article in articles[:limit]:
+        if isinstance(article.get("text"), str) and article["text"].strip():
+            continue
         article["text"] = None
         if article["url"] is None:
             continue
-        downloaded = fetch_url(article["url"], config=TRAFILATURA_CONFIG)
+        downloaded = (fetch_url(article["url"], config=TRAFILATURA_CONFIG)
+                      or fetch_html_system_certs(article["url"]))
         if downloaded is None:
             print(f"Could not download: {article['url']}")
             continue
@@ -163,14 +256,29 @@ def add_article_text(articles: list[dict], limit: int | None = None) -> list[dic
 
 if __name__ == "__main__":
     company = "pinduoduo"  # key into ALIASES, used for the title filter
-    # sent to NewsAPI: the company, or Temu only when the story is business news
-    search_query = (
-        '"PDD Holdings" OR Pinduoduo OR '
-        "(Temu AND (earnings OR regulation OR tariffs OR sales OR shares OR revenue))"
-    )
-    raw_result = get_newsapi_results(search_query)
+    raw_result = get_newsapi_results(COMPANY_QUERY)
     parsed_articles = parse_articles(raw_result)
-    filtered_articles = dedupe_by_title(filter_by_query(parsed_articles, company))
-    filtered_articles_with_text = add_article_text(filtered_articles)
-    with open("articles.json", "w", encoding="utf-8") as file:
+    filtered_articles = dedupe_by_title(filter_business_news(parsed_articles, company))
+    print(f"NewsAPI: {len(parsed_articles)} returned, {raw_result.get('totalResults')} total matches.", flush=True)
+    print(f"After business filtering and deduplication: {len(filtered_articles)} articles.", flush=True)
+    if raw_result.get("totalResults", 0) > 100:
+        print("Only the newest API page was fetched (maximum 100 results).", flush=True)
+    if filtered_articles:
+        print(f"Newest retained article: {filtered_articles[0]['published']} — {filtered_articles[0]['title']}", flush=True)
+    output_path = PROJECT_ROOT / "articles.json"
+    # Keep articles saved by earlier runs (they age out of NewsAPI's 30-day
+    # window) and reuse their extracted bodies. Re-filter the merged list so a
+    # tightened filter also purges old entries.
+    saved_articles = []
+    if output_path.exists():
+        with open(output_path, encoding="utf-8") as file:
+            saved_articles = json.load(file)
+    merged_articles = dedupe_by_title(
+        filter_business_news(merge_with_saved(filtered_articles, saved_articles), company)
+    )
+    print(f"After merging with {len(saved_articles)} saved articles: {len(merged_articles)} articles.", flush=True)
+    filtered_articles_with_text = add_article_text(merged_articles)
+    with open(output_path, "w", encoding="utf-8") as file:
         json.dump(filtered_articles_with_text, file, ensure_ascii=False, indent=2)
+    print(f"Saved {len(filtered_articles_with_text)} articles to {output_path}")
+    print(f"Articles with extracted text: {sum(bool(item.get('text')) for item in filtered_articles_with_text)}")
