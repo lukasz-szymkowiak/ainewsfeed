@@ -1,5 +1,6 @@
 # verifier.py
 import re
+from collections import Counter
 from urllib.parse import urlsplit
 import json
 from pathlib import Path
@@ -47,3 +48,27 @@ def verify(claim, lookup):
         return {"supported": False, "reason": f"missing numbers: {missing}"}
 
     return llm_judge(claim_text, source_text)
+
+if __name__ == "__main__":
+    summaries = load_summaries("summaries.json")
+    lookup = build_lookup(summaries)
+    claims = load_summaries("claims.json")
+    counts = Counter()
+    number_rejections = []
+    for claim in claims:
+        result = verify(claim, lookup)
+        print(f"{claim['claim'][:50]}... -> {result}")
+        bucket = result["reason"].split(":")[0]
+        counts[bucket] += 1
+        if bucket == "missing numbers":
+            number_rejections.append((claim, result))
+
+    print("\n--- counts ---")
+    for bucket, n in counts.most_common():
+        print(f"{bucket}: {n}")
+
+    print("\n--- missing-number rejections (read these) ---")
+    for claim, result in number_rejections:
+        print(f"CLAIM:  {claim['claim']}")
+        print(f"SOURCE: {lookup[normalize(claim['source_url'])]}")
+        print(f"REASON: {result['reason']}\n")
