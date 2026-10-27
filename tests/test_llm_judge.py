@@ -19,3 +19,7 @@ def test_garbage_gives_fallback():
 
 def test_missing_supported_key_gives_fallback():
     assert parse_judge_reply('{"reason": "no verdict"}') == FALLBACK
+
+
+def test_string_supported_gives_fallback():
+    assert parse_judge_reply('{"supported": "false", "reason": "not a boolean"}') == FALLBACK
