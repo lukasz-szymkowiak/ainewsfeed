@@ -1,4 +1,4 @@
-from verified import parse_judge_reply
+from judge import parse_judge_reply
 
 FALLBACK = {"supported": False, "reason": "judge output unparseable"}
 
