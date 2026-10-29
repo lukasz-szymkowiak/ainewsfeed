@@ -1,0 +1,25 @@
+{
+  "back": [
+    {"name": "Lat pulldown, neutral grip, to chest", "plan": "38 kg x 10"},
+    {"name": "Abs + back extensions (lower back, hamstrings)", "plan": "bodyweight"},
+    {"name": "One-arm dumbbell row", "plan": "33-34 kg, 3 x 8 per side"},
+    {"name": "Barbell row, two hands", "plan": "weight not set yet"},
+    {"name": "Triceps rope pushdown, two hands", "plan": "weight not set yet"},
+    {"name": "Triceps rope pushdown, one hand", "plan": "weight not set yet"}
+  ],
+  "chest_push": [
+    {"name": "Jump rope warm-up", "plan": "short"},
+    {"name": "Machine chest fly (butterfly)", "plan": "warm-up sets"},
+    {"name": "Bench press pyramid", "plan": "60, 70, 80, 90, 100 x 8-10, 105 x 6-8, 110-115 x 4-6"},
+    {"name": "Dumbbell bench press", "plan": "34-36 kg, 3 x 8-10"},
+    {"name": "Dumbbell overhead press", "plan": "26-28 kg, 3 x 10"},
+    {"name": "Dumbbell lateral raise", "plan": "10-12 kg per side"},
+    {"name": "Seated incline biceps curl", "plan": "8-10 kg"},
+    {"name": "Cable lateral raise", "plan": "7.5 kg per side"},
+    {"name": "Cable biceps curl, two hands and one hand", "plan": "weight not set yet"},
+    {"name": "Incline treadmill walk", "plan": "20-30 min, 6 km/h, 7% incline"}
+  ],
+  "legs": [
+    {"name": "Single-leg Romanian deadlift, kettlebell", "plan": "10-15 kg per hand"}
+  ]
+}

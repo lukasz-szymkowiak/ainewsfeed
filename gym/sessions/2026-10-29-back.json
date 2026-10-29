@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-29",
+  "type": "back",
+  "notes": "First workout after a 2-week break. Weights are the PLAN. Update with what you actually lifted.",
+  "exercises": [
+    {"name": "Lat pulldown, neutral grip, to chest", "sets": [{"kg": 38, "reps": 10}]},
+    {"name": "Abs + back extensions (lower back, hamstrings)", "sets": []},
+    {"name": "One-arm dumbbell row", "per_side": true,
+     "sets": [{"kg": 34, "reps": 8}, {"kg": 34, "reps": 8}, {"kg": 34, "reps": 8}]},
+    {"name": "Barbell row, two hands", "sets": []},
+    {"name": "Triceps rope pushdown, two hands", "sets": []},
+    {"name": "Triceps rope pushdown, one hand", "sets": []}
+  ],
+  "optional_if_gym_is_quiet": [
+    {"name": "Single-leg Romanian deadlift, kettlebell", "sets": []}
+  ],
+  "cardio": [
+    {"type": "sauna", "minutes": 20},
+    {"type": "home rowing (evening)", "minutes": 30, "intensity": "easy, low heart rate"}
+  ]
+}
