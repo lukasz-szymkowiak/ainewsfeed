@@ -1,6 +1,6 @@
 # AINewsFeed — Build Plan
 
-Updated Oct 18, 2026 · Adapted from the FX News Agent plan, applied to AINewsFeed instead of EUR/PLN.
+Updated Oct 30, 2026 · Adapted from the FX News Agent plan, applied to AINewsFeed instead of EUR/PLN.
 
 ## What it is
 
@@ -18,15 +18,16 @@ An agent that answers "What happened with PDD / Temu this week?" from collected 
 - [ ] `docker compose up` starts everything locally; CI is green
 - [ ] A README and one write-up post on how you calibrated the judge
 
-## Current status (Oct 18, 2026)
+## Current status (Oct 30, 2026)
 
 | Piece | Status |
 | --- | --- |
 | `api_scrapper.py`: fetch, filter, dedupe, extract text → `articles.json` | Done |
 | `summarize_all.py`: 3-bullet summaries → `summaries.json` | Done |
 | `writer.py`: claims with `source_url` → `claims.json` | Done (a74e512) |
-| `verifier.py`: `normalize`, `missing_numbers`, `build_lookup`, `verify` with stub judge, 9 tests passing | Done (a74e512) |
-| Real `llm_judge` | Next |
+| `verified.py`: `normalize`, `missing_numbers`, `build_lookup`, `verify` with stub judge, dry-run tally, 9 tests passing | Done (a74e512, c671150) |
+| `judge.py`: `build_prompt`, `parse_judge_reply`, `call_claude` with one retry | In progress (707b64b, WIP): 4 of 5 tests in `tests/test_llm_judge.py` fail |
+| Real `llm_judge` wired into `verify` (replaces the stub in `verified.py`) | Next |
 | ruff, mypy, CI, Postgres, scheduling | Not started |
 
 ## Stack
@@ -67,9 +68,9 @@ About 8 hours a week. Each line below is one session (60–90 min) with its done
 
 Covers: LLM-as-judge (early M5 work), testing.
 
-- [ ] **S1:** Commit `writer.py`, verifier and tests. *Done:* `git status` clean.
-- [ ] **S1:** Dry run of `verify` on real claims with the stub judge. *Done:* counts for "source not found", "missing numbers", "stub"; 2–3 missing-numbers rejections read and judged as real errors or formatting misses.
-- [ ] **S2:** `parse_judge_reply(text)` plus tests: clean JSON, fenced JSON, garbage → fallback, missing `supported` → fallback. *Done:* tests pass.
+- [x] **S1:** Commit `writer.py`, verifier and tests. *Done:* `git status` clean.
+- [x] **S1:** Dry run of `verify` on real claims with the stub judge. *Done:* counts for "source not found", "missing numbers", "stub"; 2–3 missing-numbers rejections read and judged as real errors or formatting misses.
+- [ ] **S2:** `parse_judge_reply(text)` plus tests: clean JSON, fenced JSON, garbage, missing `supported`. *Done:* tests pass. *Status:* function and tests exist; 4 tests still fail. Left to do: strip code fences before `json.loads`; the parser keeps raising `ValueError`, so change the 3 fallback tests to `pytest.raises(ValueError)`; return `FALLBACK` only after the retry fails, in `call_claude` or `verify`.
 - [ ] **S3:** Real `llm_judge` with a strict prompt (supported only if the source states it outright). *Done:* one hand-picked claim gets a sensible verdict.
 - [ ] **S3:** Full run on all claims; save `verified.json`. *Done:* counts per outcome, plus one rejection you agree with.
 
