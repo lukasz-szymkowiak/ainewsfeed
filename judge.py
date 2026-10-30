@@ -49,20 +49,19 @@ def call_claude(prompt: str) -> str:
     hist.append({"role": "user", "content": prompt})
     hist.append({"role": "assistant", "content": response.content[0].text})
     reply_llm = response.content[0].text
+    pr2 = [{"role": "user", "content": f"""bad output, please return only a JSON object with two keys: 'supported' (boolean) and 'reason' (string)."""}]
     try:
-        reply_llm = parse_judge_reply(reply_llm)
+        return parse_judge_reply(reply_llm)
     except ValueError:
         response2 = client.messages.create(
                 model="claude-haiku-5-5",
                 max_tokens=1500,
-                messages=[{"role": "user", "content": "bad output, please return only a JSON object with two keys: 'supported' (boolean) and 'reason' (string)."}],
+                messages= hist+pr2,
             )
         reply_llm = response2.content[0].text
 
-    return reply_llm
+    return parse_judge_reply(reply_llm)
 
-if __name__ == "__main__":
-    reply = call_claude(build_prompt("hello", "world"))
-    print(type(reply))
-    print(parse_judge_reply(reply))
+
+
 
